@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} { 
+      allow read, write: if false; 
+    }
+
+    // Phase 3: Primitives
+    function isValidId(id) { 
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isAdmin() { 
+      return isSignedIn() && (
+        request.auth.token.email == 'azamashrapov2705@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true)
+      );
+    }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+
+    // Validation Blueprint for User
+    function isValidUser(data, isCreate) {
+      return data.keys().hasAll(['username', 'email', 'createdAt', 'isAdmin']) 
+          && data.keys().size() == 4
+          && data.username is string && data.username.size() >= 3 && data.username.size() <= 20
+          && data.email is string && data.email.size() <= 100
+          && data.createdAt == request.time
+          && data.isAdmin is bool
+          && (isCreate ? data.isAdmin == false : true); // Users can't create themselves as admins initially, only hardcoded admin can bypass or bootstrap. (Actually we'll let bootstrap admin create themselves directly as admin).
+    }
+
+    function isValidUserUpdate(data) {
+      // Just enforcing basic types on update since users can only update specific fields
+      // and admins can update everything.
+      return (!('username' in data) || (data.username is string && data.username.size() >= 3 && data.username.size() <= 20))
+          && (!('email' in data) || (data.email is string && data.email.size() <= 100))
+          && (!('createdAt' in data) || data.createdAt == existing().createdAt)
+          && (!('isAdmin' in data) || data.isAdmin is bool);
+    }
+
+    function isValidUsernameRegistry(data, userId) {
+      return data.keys().hasAll(['userId']) 
+          && data.keys().size() == 1
+          && data.userId is string 
+          && data.userId.size() <= 128
+          && data.userId == userId;
+    }
+
+    match /users/{userId} {
+      allow read: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      // Admins can list all users
+      allow list: if isAdmin();
+      
+      allow create: if isVerified() 
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUser(incoming(), true)
+        && (incoming().isAdmin == false || request.auth.token.email == 'azamashrapov2705@gmail.com')
+        // Atomicity constraint: MUST also reserve username
+        && existsAfter(/databases/$(database)/documents/usernames/$(incoming().username));
+      
+      allow update: if isVerified()
+        && isValidId(userId)
+        && isValidUserUpdate(incoming())
+        && (
+          isAdmin() ||
+          (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'email']) 
+           // If username changed, ensure new username is reserved
+           && (incoming().username == existing().username || existsAfter(/databases/$(database)/documents/usernames/$(incoming().username)))
+          )
+        );
+        
+      allow delete: if isAdmin();
+    }
+
+    match /usernames/{usernameId} {
+      // Anyone can verify username existence for registration
+      allow get: if isValidId(usernameId) && isSignedIn();
+      // Only for checking existence, no listing
+      allow list: if false;
+
+      allow create: if isVerified()
+        && isValidId(usernameId)
+        && isValidUsernameRegistry(incoming(), request.auth.uid)
+        // Must be creating/updating the user document atomically
+        && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid));
+
+      allow delete: if isVerified() && isValidId(usernameId) && (isAdmin() || isOwner(existing().userId));
+    }
+  }
+}

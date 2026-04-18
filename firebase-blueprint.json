@@ -1,0 +1,35 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with unique username and admin flag.",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "Unique username" },
+        "email": { "type": "string", "description": "User email address" },
+        "createdAt": { "type": "string", "format": "timestamp" },
+        "isAdmin": { "type": "boolean", "description": "Admin privilege flag" }
+      },
+      "required": ["username", "email", "createdAt", "isAdmin"]
+    },
+    "UsernameRegistry": {
+      "title": "UsernameRegistry",
+      "description": "Registry to enforce unique usernames.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the user holding this username" }
+      },
+      "required": ["userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles."
+    },
+    "/usernames/{username}": {
+      "schema": { "$ref": "#/entities/UsernameRegistry" },
+      "description": "Stores reserved usernames."
+    }
+  }
+}
