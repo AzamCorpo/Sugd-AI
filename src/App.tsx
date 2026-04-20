@@ -37,7 +37,7 @@ import { translations } from './translations';
 import { useAuth } from './lib/AuthContext';
 import { LoginScreen, SetupProfileScreen } from './components/AuthScreens';
 import { AdminDashboard } from './components/AdminDashboard';
-import { logout } from './lib/firebase';
+import { logout, loadUserChatsFromDB, saveUserChatsToDB } from './lib/firebase';
 
 interface Message {
   id: string;
@@ -73,12 +73,28 @@ function MainApp() {
   
   const [lang, setLang] = useState<'tg' | 'ru' | 'en'>('tg');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [profile, setProfile] = useState({ name: authProfile?.username || 'User', email: authProfile?.email || '', apiKey: '' });
+  const [profile, setProfile] = useState({ 
+    name: authProfile?.username || 'User', 
+    email: authProfile?.email || '', 
+    apiKey: '',
+    fullName: authProfile?.fullName || '',
+    photoUrl: authProfile?.photoUrl || '',
+    bio: authProfile?.bio || '',
+    links: authProfile?.links || ''
+  });
   const t = translations[lang];
 
   useEffect(() => {
     if (authProfile) {
-      setProfile(prev => ({ ...prev, name: authProfile.username, email: authProfile.email }));
+      setProfile(prev => ({ 
+        ...prev, 
+        name: authProfile.username || prev.name, 
+        email: authProfile.email || prev.email,
+        fullName: authProfile.fullName || prev.fullName,
+        photoUrl: authProfile.photoUrl || prev.photoUrl,
+        bio: authProfile.bio || prev.bio,
+        links: authProfile.links || prev.links
+      }));
     }
   }, [authProfile]);
 
@@ -138,36 +154,44 @@ function MainApp() {
   const currentChat = chats.find(c => c.id === currentChatId);
   const messages = currentChat?.messages || [];
 
-  // Load chats from localStorage
+  // Load chats from DB or localStorage
   useEffect(() => {
-    const savedChats = localStorage.getItem('sugd_ai_chats');
-    if (savedChats) {
-      try {
-        const parsed = JSON.parse(savedChats);
-        setChats(parsed);
-        if (parsed.length > 0) {
-          setCurrentChatId(parsed[0].id);
-        } else {
-          const newChat: ChatHistory = { id: Date.now().toString(), title: t.newChat, messages: [], updatedAt: Date.now() };
-          setChats([newChat]);
-          setCurrentChatId(newChat.id);
+    const loadChats = async () => {
+      let loadedChats = [];
+      if (user) {
+        loadedChats = await loadUserChatsFromDB(user.uid);
+      }
+      
+      if (!loadedChats || loadedChats.length === 0) {
+        const savedChats = localStorage.getItem('sugd_ai_chats');
+        if (savedChats) {
+          try {
+            loadedChats = JSON.parse(savedChats);
+          } catch (e) {}
         }
-      } catch (e) {
+      }
+
+      if (loadedChats && loadedChats.length > 0) {
+        setChats(loadedChats);
+        setCurrentChatId(loadedChats[0].id);
+      } else {
         const newChat: ChatHistory = { id: Date.now().toString(), title: t.newChat, messages: [], updatedAt: Date.now() };
         setChats([newChat]);
         setCurrentChatId(newChat.id);
       }
-    } else {
-      const newChat: ChatHistory = { id: Date.now().toString(), title: t.newChat, messages: [], updatedAt: Date.now() };
-      setChats([newChat]);
-      setCurrentChatId(newChat.id);
-    }
-  }, []);
+    };
+    
+    loadChats();
+  }, [user, t.newChat]); // Reload when user changes
 
-  // Save chats to localStorage
+  // Save chats to DB and localStorage
   useEffect(() => {
     localStorage.setItem('sugd_ai_chats', JSON.stringify(chats));
-  }, [chats]);
+    if (user && chats.length > 0 && chats[0].messages.length > 0) {
+      // Only save to DB if we have actual content to avoid overwriting with empty
+      saveUserChatsToDB(user.uid, chats);
+    }
+  }, [chats, user]);
 
   // Scroll to bottom
   useEffect(() => {
@@ -563,11 +587,15 @@ function MainApp() {
               </motion.button>
             )}
             <div className="flex items-center gap-3 p-3 mt-2 bg-black/[0.02] dark:bg-white/[0.02] rounded-2xl border border-black/5 dark:border-white/5 relative group cursor-pointer" onClick={logout} title="Click to logout">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-400 flex items-center justify-center text-xs font-bold text-slate-900 dark:text-white shadow-lg shadow-indigo-500/20 uppercase">
-                {profile.name.substring(0,2)}
+              <div className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-tr from-indigo-600 to-blue-400 flex items-center justify-center text-xs font-bold text-slate-900 dark:text-white shadow-lg shadow-indigo-500/20 uppercase shrink-0">
+                {profile.photoUrl ? (
+                  <img src={profile.photoUrl} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  profile.name.substring(0,2)
+                )}
               </div>
               <div className="flex flex-col overflow-hidden">
-                <span className="text-xs font-bold truncate text-slate-900 dark:text-white">{profile.name}</span>
+                <span className="text-xs font-bold truncate text-slate-900 dark:text-white">{profile.fullName || profile.name}</span>
                 <span className="text-[10px] text-slate-500 truncate">{profile.email}</span>
               </div>
               <div className="absolute inset-0 bg-red-500/10 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
@@ -695,7 +723,7 @@ function MainApp() {
                   {t.subtitle}
                 </motion.p>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-3xl">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-3xl px-4 md:px-0">
                   {suggestions.map((s, i) => (
                     <motion.button
                       key={i}
@@ -703,13 +731,16 @@ function MainApp() {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.4 + (i * 0.1) }}
                       onClick={() => setInput(s.prompt)}
-                      className="p-5 bg-black/[0.02] dark:bg-white/[0.02] hover:bg-slate-100 dark:bg-white/[0.05] border border-black/5 dark:border-white/5 hover:border-indigo-500/50 dark:border-indigo-500/30 rounded-2xl text-left transition-all duration-300 group relative overflow-hidden"
+                      className={cn(
+                        "p-4 border border-black/5 dark:border-white/5 hover:border-indigo-500/50 dark:border-indigo-500/30 rounded-2xl text-left transition-all duration-300 group relative overflow-hidden",
+                        i > 1 ? "hidden sm:block" : "bg-black/[0.02] dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.05]"
+                      )}
                     >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em]">{s.title}</span>
-                        <ChevronRight size={14} className="text-slate-600 group-hover:text-indigo-600 dark:text-indigo-400 group-hover:translate-x-1 transition-all" />
+                      <div className="flex items-center justify-between mb-1 md:mb-2">
+                        <span className="text-[10px] sm:text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em]">{s.title}</span>
+                        <ChevronRight size={14} className="text-slate-600 group-hover:text-indigo-600 dark:text-indigo-400 sm:group-hover:translate-x-1 transition-all" />
                       </div>
-                      <p className="text-sm text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:text-slate-200 transition-colors leading-relaxed">{s.prompt}</p>
+                      <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors leading-relaxed line-clamp-2 md:line-clamp-none">{s.prompt}</p>
                     </motion.button>
                   ))}
                 </div>
@@ -857,13 +888,13 @@ function MainApp() {
             <motion.div 
               id="tour-chat-input"
               layout
-              className="relative flex flex-col gap-2 bg-white dark:bg-white/[0.03] backdrop-blur-3xl border border-black/10 dark:border-white/10 rounded-[2.5rem] p-3 shadow-2xl focus-within:border-indigo-500/40 focus-within:bg-slate-50 dark:focus-within:bg-white/[0.05] focus-within:shadow-indigo-500/10 transition-all duration-500 group"
+              className="relative flex flex-col gap-2 bg-white dark:bg-[#0f1523] backdrop-blur-3xl border border-black/10 dark:border-white/10 rounded-[2rem] p-2 md:p-3 shadow-2xl focus-within:border-indigo-500/40 focus-within:shadow-indigo-500/10 transition-all duration-500 group mx-2 md:mx-0"
             >
               <AnimatePresence>
                 {selectedImage && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="px-5 pt-3">
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="px-3 pt-2 md:px-5 md:pt-3">
                     <div className="relative inline-block group/img">
-                      <img src={selectedImage} alt="Preview" className="h-20 w-auto rounded-xl object-cover border border-slate-200 dark:border-slate-800 shadow-md transition-all group-hover/img:brightness-75" />
+                      <img src={selectedImage} alt="Preview" className="h-16 md:h-20 w-auto rounded-xl object-cover border border-slate-200 dark:border-slate-800 shadow-md transition-all group-hover/img:brightness-75" />
                       <button onClick={() => setSelectedImage(null)} className="absolute -top-2 -right-2 p-1.5 bg-slate-800 dark:bg-white text-white dark:text-slate-900 rounded-full hover:scale-110 shadow-md transition-all z-10 opacity-0 group-hover/img:opacity-100">
                         <X size={12} strokeWidth={3} />
                       </button>
@@ -871,24 +902,16 @@ function MainApp() {
                   </motion.div>
                 )}
               </AnimatePresence>
-              <div className="flex items-end gap-2 w-full">
+              <div className="flex items-end gap-1 md:gap-2 w-full">
                 <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={handleImageUpload} />
                 <motion.button 
                   onClick={() => fileInputRef.current?.click()}
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
-                  className="p-4 rounded-full text-slate-500 hover:text-indigo-600 dark:text-indigo-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-all"
+                  className="p-3 md:p-4 rounded-full text-slate-500 hover:text-indigo-600 dark:text-indigo-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-all outline-none"
                   title="Upload Image/File"
                 >
-                  <Paperclip size={20} />
-                </motion.button>
-                <motion.button 
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  className="p-4 rounded-full text-slate-500 hover:text-indigo-600 dark:text-indigo-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-all hidden md:block"
-                  title={t.voiceInput}
-                >
-                  <Mic size={20} />
+                  <Paperclip size={18} className="md:w-5 md:h-5" />
                 </motion.button>
                 <textarea
                   ref={textareaRef}
@@ -904,17 +927,17 @@ function MainApp() {
                   }
                 }}
                 placeholder={t.typeMessage}
-                className="flex-1 bg-transparent border-none focus:ring-0 text-[15px] py-4 px-2 resize-none max-h-[200px] custom-scrollbar placeholder:text-slate-400 dark:placeholder:text-slate-600 text-slate-900 dark:text-slate-200 leading-relaxed font-medium"
+                className="flex-1 bg-transparent border-none focus:ring-0 text-[14px] md:text-[15px] pt-4 pb-4 px-2 min-h-[50px] resize-none max-h-[150px] md:max-h-[200px] custom-scrollbar placeholder:text-slate-400 dark:placeholder:text-slate-600 text-slate-900 dark:text-slate-200 leading-relaxed font-medium"
                 rows={1}
               />
               <motion.button
                 whileHover={input.trim() && !isLoading ? { scale: 1.05 } : {}}
                 whileTap={input.trim() && !isLoading ? { scale: 0.95 } : {}}
                 onClick={handleSend}
-                disabled={!input.trim() || isLoading}
+                disabled={(!input.trim() && !selectedImage) || isLoading}
                 className={cn(
-                  "p-4 rounded-[1.8rem] transition-all duration-500 flex items-center justify-center",
-                  input.trim() && !isLoading
+                  "p-3 md:p-4 rounded-[1.5rem] md:rounded-[1.8rem] transition-all duration-500 flex items-center justify-center m-1 md:m-0",
+                  (input.trim() || selectedImage) && !isLoading
                     ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/40"
                     : "bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-600 cursor-not-allowed"
                 )}
@@ -922,12 +945,12 @@ function MainApp() {
                 {isLoading ? (
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
-                  <Send size={22} />
+                  <Send size={18} className="md:w-[22px] md:h-[22px]" />
                 )}
               </motion.button>
               </div>
             </motion.div>
-            <p className="text-[10px] text-center text-slate-600 mt-5 font-bold uppercase tracking-[0.25em] opacity-50">
+            <p className="text-[9px] md:text-[10px] text-center text-slate-600 mt-3 md:mt-5 mb-2 md:mb-0 font-bold uppercase tracking-[0.25em] opacity-50 pb-safe">
               by Azam Ashrapov
             </p>
           </div>
@@ -997,11 +1020,72 @@ function MainApp() {
                 </div>
 
                 <div className="space-y-4">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{t.profile}</label>
-                  <div className="space-y-3">
-                    <input type="text" value={profile.name} onChange={e => setProfile({...profile, name: e.target.value})} placeholder={t.name} className="w-full bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500" />
-                    <input type="email" value={profile.email} onChange={e => setProfile({...profile, email: e.target.value})} placeholder={t.email} className="w-full bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500" />
-                    <input type="password" value={profile.apiKey} onChange={e => setProfile({...profile, apiKey: e.target.value})} placeholder={t.apiKey} className="w-full bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500" />
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{t.profile}</label>
+                    <button 
+                      onClick={async () => {
+                        if (user) {
+                          const updated = {
+                            username: profile.name,
+                            fullName: profile.fullName,
+                            bio: profile.bio,
+                            links: profile.links,
+                            photoUrl: profile.photoUrl
+                          };
+                          import('./lib/firebase').then(m => m.updateUserProfileInDB(user.uid, updated));
+                          toast.success("Profile saved");
+                        }
+                      }}
+                      className="text-[10px] bg-indigo-600 text-white px-3 py-1.5 rounded-full font-bold uppercase tracking-wider hover:bg-indigo-700 transition"
+                    >
+                      Save Profile
+                    </button>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-4 p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20">
+                      <div className="relative w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-500 flex items-center justify-center text-xl font-bold text-white shadow-lg shadow-indigo-500/30 uppercase ring-4 ring-white dark:ring-[#0f172a] overflow-hidden group">
+                        {profile.photoUrl ? (
+                          <img src={profile.photoUrl} alt="Avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          profile.name.substring(0,2)
+                        )}
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+                          <span className="text-[8px] tracking-widest">EDIT</span>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider opacity-50 mb-1">Username (ID)</p>
+                        <input 
+                          type="text" 
+                          value={profile.name} 
+                          onChange={e => setProfile({...profile, name: e.target.value})} 
+                          placeholder={t.name} 
+                          className="w-full bg-transparent border-none p-0 text-lg font-bold text-indigo-900 dark:text-indigo-300 outline-none placeholder:text-indigo-300 dark:placeholder:text-indigo-700 focus:ring-0" 
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-3 relative">
+                      <input type="text" value={profile.fullName || ''} onChange={e => setProfile({...profile, fullName: e.target.value})} placeholder="ФИО / Full Name" className="w-full bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500 transition-colors" />
+                      
+                      <div className="relative">
+                        <input type="text" value={profile.photoUrl || ''} onChange={e => setProfile({...profile, photoUrl: e.target.value})} placeholder="URL фото профиля / Photo URL (https://...)" className="w-full bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500 transition-colors" />
+                        <div className="absolute left-4 top-3 text-slate-400"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>
+                      </div>
+
+                      <div className="relative">
+                        <input type="email" value={profile.email} onChange={e => setProfile({...profile, email: e.target.value})} disabled placeholder={t.email} className="w-full bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-800 dark:text-slate-500 outline-none cursor-not-allowed opacity-70 transition-colors" />
+                        <div className="absolute left-4 top-3 text-slate-400">@</div>
+                      </div>
+                      
+                      <div className="relative">
+                        <input type="password" value={profile.apiKey} onChange={e => setProfile({...profile, apiKey: e.target.value})} placeholder={t.apiKey} className="w-full bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500 transition-colors" />
+                        <div className="absolute left-4 top-3 text-slate-400"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 18v3c0 .6.4 1 1 1h4v-3h3v-3h2l1.4-1.4a6.5 6.5 0 1 0-4-4Z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></svg></div>
+                      </div>
+
+                      <textarea value={profile.bio || ''} onChange={e => setProfile({...profile, bio: e.target.value})} placeholder="О себе / Bio" rows={2} className="w-full bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500 transition-colors resize-none" />
+                      <input type="text" value={profile.links || ''} onChange={e => setProfile({...profile, links: e.target.value})} placeholder="Ссылки (Instagram, LinkedIn) / Social Links" className="w-full bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-500 transition-colors" />
+                    </div>
                   </div>
                 </div>
 
