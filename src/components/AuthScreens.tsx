@@ -29,11 +29,17 @@ export const LoginScreen = () => {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#02040a] text-slate-200 p-4">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-transparent text-slate-200 p-4 relative overflow-hidden">
+      {/* Background blobs for Auth screens since they are outside MainApp */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 opacity-40">
+        <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] bg-indigo-500/20 blur-[120px] rounded-full animate-pulse" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] bg-purple-500/20 blur-[120px] rounded-full animate-pulse" />
+      </div>
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md p-8 bg-[#0b0f1a] border border-white/10 rounded-3xl shadow-2xl text-center"
+        className="w-full max-w-md p-8 glass-liquid border border-white/10 rounded-3xl shadow-2xl text-center relative z-10"
       >
         <Logo className="mx-auto mb-8 scale-110" />
         <h2 className="text-2xl font-bold mb-2">Хуш омадед / Welcome</h2>
@@ -139,11 +145,16 @@ export const SetupProfileScreen = () => {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#02040a] text-slate-200 p-4">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-transparent text-slate-200 p-4 relative overflow-hidden">
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 opacity-40">
+        <div className="absolute top-[-10%] right-[-10%] w-[50vw] h-[50vw] bg-indigo-500/20 blur-[120px] rounded-full animate-pulse" />
+        <div className="absolute bottom-[-10%] left-[-10%] w-[50vw] h-[50vw] bg-purple-500/20 blur-[120px] rounded-full animate-pulse" />
+      </div>
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md p-8 bg-[#0b0f1a] border border-white/10 rounded-3xl shadow-2xl"
+        className="w-full max-w-md p-8 glass-liquid border border-white/10 rounded-3xl shadow-2xl relative z-10"
       >
         <h2 className="text-2xl font-bold mb-2 text-center">Создайте профиль / Set up profile</h2>
         <p className="text-slate-400 mb-6 text-sm text-center">Choose a unique username</p>

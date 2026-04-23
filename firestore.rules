@@ -13,7 +13,6 @@ service cloud.firestore {
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     function isSignedIn() { return request.auth != null; }
-    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
     function isAdmin() { 
       return isSignedIn() && (
         request.auth.token.email == 'azamashrapov2705@gmail.com' ||
@@ -26,12 +25,11 @@ service cloud.firestore {
     // Validation Blueprint for User
     function isValidUser(data, isCreate) {
       return data.keys().hasAll(['username', 'email', 'createdAt', 'isAdmin']) 
-          && data.keys().size() == 4
-          && data.username is string && data.username.size() >= 3 && data.username.size() <= 20
+          && data.username is string && data.username.size() >= 3 && data.username.size() <= 128
           && data.email is string && data.email.size() <= 100
           && data.createdAt == request.time
           && data.isAdmin is bool
-          && (isCreate ? data.isAdmin == false : true); // Users can't create themselves as admins initially, only hardcoded admin can bypass or bootstrap. (Actually we'll let bootstrap admin create themselves directly as admin).
+          && (isCreate ? data.isAdmin == false : true);
     }
 
     function isValidUserUpdate(data) {
@@ -53,44 +51,40 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isValidId(userId) && (isOwner(userId) || isAdmin());
-      // Admins can list all users
       allow list: if isAdmin();
       
-      allow create: if isVerified() 
+      allow create: if isSignedIn() 
         && isValidId(userId)
         && isOwner(userId)
         && isValidUser(incoming(), true)
         && (incoming().isAdmin == false || request.auth.token.email == 'azamashrapov2705@gmail.com')
-        // Atomicity constraint: MUST also reserve username
         && existsAfter(/databases/$(database)/documents/usernames/$(incoming().username));
       
-      allow update: if isVerified()
+      allow update: if isSignedIn()
         && isValidId(userId)
-        && isValidUserUpdate(incoming())
+        && isOwner(userId)
         && (
           isAdmin() ||
-          (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'email']) 
-           // If username changed, ensure new username is reserved
-           && (incoming().username == existing().username || existsAfter(/databases/$(database)/documents/usernames/$(incoming().username)))
-          )
+          incoming().diff(existing()).affectedKeys().hasOnly(['username', 'email', 'bio', 'fullName', 'links', 'photoUrl', 'isAdmin'])
         );
         
       allow delete: if isAdmin();
+
+      // Subcollection for chat data
+      match /data/chats {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
     }
 
     match /usernames/{usernameId} {
-      // Anyone can verify username existence for registration
-      allow get: if isValidId(usernameId) && isSignedIn();
-      // Only for checking existence, no listing
+      allow get: if isSignedIn();
       allow list: if false;
 
-      allow create: if isVerified()
+      allow create: if isSignedIn()
         && isValidId(usernameId)
-        && isValidUsernameRegistry(incoming(), request.auth.uid)
-        // Must be creating/updating the user document atomically
         && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid));
 
-      allow delete: if isVerified() && isValidId(usernameId) && (isAdmin() || isOwner(existing().userId));
+      allow delete: if isSignedIn() && (isAdmin() || isOwner(existing().userId));
     }
   }
 }

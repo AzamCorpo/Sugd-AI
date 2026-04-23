@@ -8,7 +8,19 @@
         "username": { "type": "string", "description": "Unique username" },
         "email": { "type": "string", "description": "User email address" },
         "createdAt": { "type": "string", "format": "timestamp" },
-        "isAdmin": { "type": "boolean", "description": "Admin privilege flag" }
+        "isAdmin": { "type": "boolean", "description": "Admin privilege flag" },
+        "memory": {
+          "type": "object",
+          "description": "User memory facts extracted from conversations.",
+          "properties": {
+            "name": { "type": "string" },
+            "age": { "type": "string" },
+            "city": { "type": "string" },
+            "profession": { "type": "string" },
+            "interests": { "type": "array", "items": { "type": "string" } },
+            "goals": { "type": "array", "items": { "type": "string" } }
+          }
+        }
       },
       "required": ["username", "email", "createdAt", "isAdmin"]
     },

@@ -10,6 +10,15 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 export const appleProvider = new OAuthProvider('apple.com');
 
+export interface UserMemory {
+  name?: string;
+  age?: string;
+  city?: string;
+  profession?: string;
+  interests?: string[];
+  goals?: string[];
+}
+
 export interface UserProfile {
   username: string;
   email: string;
@@ -19,6 +28,7 @@ export interface UserProfile {
   photoUrl?: string;
   bio?: string;
   links?: string;
+  memory?: UserMemory;
 }
 
 export const checkConnection = async () => {
@@ -38,7 +48,11 @@ export const loginWithGoogle = async () => {
     return result.user;
   } catch (error: any) {
     console.error("Login failed:", error);
-    toast.error("Вход не выполнен. Возможно, всплывающие окна заблокированы. / Login failed.");
+    if (error.code === 'auth/popup-blocked') {
+      toast.error("Всплывающее окно заблокировано. Пожалуйста, разрешите всплывающие окна для работы входа.");
+    } else {
+      toast.error("Ошибка входа Google: " + error.message);
+    }
     return null;
   }
 };
@@ -49,7 +63,7 @@ export const loginWithApple = async () => {
     return result.user;
   } catch (error: any) {
     console.error("Apple login failed:", error);
-    toast.error("Вход через Apple не выполнен. / Apple login failed.");
+    toast.error("Ошибка входа Apple: " + error.message);
     return null;
   }
 };
@@ -58,6 +72,8 @@ export const loginAsGuest = async () => {
   try {
     const result = await signInAnonymously(auth);
     if (result.user) {
+      // Small delay to ensure DB is ready if needed
+      await new Promise(r => setTimeout(r, 500));
       // Check if profile exists already
       const docSnap = await getDoc(doc(db, 'users', result.user.uid));
       if (!docSnap.exists()) {
@@ -68,8 +84,20 @@ export const loginAsGuest = async () => {
     return result.user;
   } catch (error: any) {
     console.error("Guest login failed:", error);
-    toast.error("Ошибка гостевого входа. / Guest login failed.");
+    if (error.code === 'auth/operation-not-allowed') {
+      toast.error("Гостевой вход не включен в консоли Firebase. Пожалуйста, включите Anonymous Auth.");
+    } else {
+      toast.error("Ошибка гостевого входа: " + error.message);
+    }
     return null;
+  }
+};
+
+export const updateUserMemory = async (userId: string, memory: UserMemory) => {
+  try {
+    await setDoc(doc(db, 'users', userId), { memory }, { merge: true });
+  } catch (error) {
+    console.error("Error updating user memory:", error);
   }
 };
 
@@ -126,7 +154,12 @@ export const updateUserProfileInDB = async (uid: string, data: Partial<UserProfi
 
 export const saveUserChatsToDB = async (uid: string, chats: any[]) => {
   try {
-    await setDoc(doc(db, 'users', uid, 'data', 'chats'), { chats });
+    // Sanitize data to remove undefined values which Firestore doesn't support
+    const sanitizedChats = JSON.parse(JSON.stringify(chats, (key, value) => {
+      if (value === undefined) return null;
+      return value;
+    }));
+    await setDoc(doc(db, 'users', uid, 'data', 'chats'), { chats: sanitizedChats });
   } catch (err) {
     console.error("Error saving chats to DB", err);
   }
