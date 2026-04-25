@@ -93,6 +93,12 @@ export const translations = {
     interestsLabel: 'Шавқу ҳавас',
     goalsLabel: 'Мақсадҳо',
     proTip: 'Маслиҳат: Sugd AI ин рӯйхатро ҳангоми сӯҳбат худкор нав мекунад.',
+    wisdom: 'Ҳикмати рӯз',
+    wisdoms: [
+      "Илм аз ҳама чиз болотар аст. — Рӯдакӣ",
+      "Бани одам аъзои якдигаранд. — Саъдӣ",
+      "Ҳама бо ҳам меҳрубон бошем. — Хофиз"
+    ],
     suggestions: [
       { title: "Таърихи Тоҷикистон", prompt: "Дар бораи таърихи Тоҷикистон ба ман нақл кунед." },
       { title: "Омӯзиши барномасозӣ", prompt: "Чӣ тавр ман метавонам барномасозиро аз сифр оғоз кунам?" },
@@ -194,6 +200,12 @@ export const translations = {
     interestsLabel: 'Интересы',
     goalsLabel: 'Цели',
     proTip: 'Совет: Sugd AI автоматически обновляет этот список во время чата.',
+    wisdom: 'Мудрость дня',
+    wisdoms: [
+      "Знание — высшее благо. — Рудаки",
+      "Человечество — единое целое. — Саади",
+      "Будьте добрее друг к другу. — Хафиз"
+    ],
     suggestions: [
       { title: "История Таджикистана", prompt: "Расскажите мне об истории Таджикистана." },
       { title: "Изучение программирования", prompt: "Как мне начать программировать с нуля?" },
@@ -295,6 +307,12 @@ export const translations = {
     interestsLabel: 'Interests',
     goalsLabel: 'Goals',
     proTip: 'Pro Tip: Sugd AI automatically updates this list as you chat.',
+    wisdom: 'Wisdom of the Day',
+    wisdoms: [
+      "Knowledge is the highest good. — Rudaki",
+      "Humanity is one single body. — Saadi",
+      "Be kind to each other. — Hafiz"
+    ],
     suggestions: [
       { title: "History of Tajikistan", prompt: "Tell me about the history of Tajikistan." },
       { title: "Learn Programming", prompt: "How can I start programming from scratch?" },
@@ -396,6 +414,12 @@ export const translations = {
     interestsLabel: 'علاایق',
     goalsLabel: 'اهداف',
     proTip: 'نکته: Sugd AI این لیست را هنگام چت به طور خودکار به روز می‌کند.',
+    wisdom: 'حکمت روز',
+    wisdoms: [
+      "علم از همه چیز برتر است. — رودکی",
+      "بنی‌آدم اعضای یکدیگرند. — سعدی",
+      "با هم مهربان باشیم. — حافظ"
+    ],
     suggestions: [
       { title: "تاریخ تاجیکستان", prompt: "درباره تاریخ تاجیکستان برای من بگویید." },
       { title: "یادگیری برنامه‌نویسی", prompt: "چگونه می‌توانم برنامه‌نویسی را از صفر شروع کنم؟" },

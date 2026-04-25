@@ -84,9 +84,7 @@ export const loginAsGuest = async () => {
     return result.user;
   } catch (error: any) {
     console.error("Guest login failed:", error);
-    if (error.code === 'auth/operation-not-allowed') {
-      toast.error("Гостевой вход не включен в консоли Firebase. Пожалуйста, включите Anonymous Auth.");
-    } else {
+    if (error.code !== 'auth/operation-not-allowed') {
       toast.error("Ошибка гостевого входа: " + error.message);
     }
     return null;
@@ -111,7 +109,8 @@ export const checkUsernameAvailable = async (username: string): Promise<boolean>
     return !usernameDoc.exists();
   } catch (error) {
     console.error("Error checking username:", error);
-    return false;
+    // Be permissive if security rules or network fails, let backend handle actual dupe on write
+    return true; 
   }
 };
 
@@ -143,11 +142,37 @@ export const createUserProfile = async (uid: string, email: string, username: st
 export const updateUserProfileInDB = async (uid: string, data: Partial<UserProfile>) => {
   try {
     const userRef = doc(db, 'users', uid);
-    await setDoc(userRef, data, { merge: true });
+    
+    // If updating username, also update the usernames collection for uniqueness
+    if (data.username) {
+      const batch = writeBatch(db);
+      const snapshot = await getDoc(userRef);
+      const oldUsername = snapshot.data()?.username;
+      
+      if (oldUsername && oldUsername !== data.username.toLowerCase()) {
+        const oldRef = doc(db, 'usernames', oldUsername.toLowerCase());
+        const newRef = doc(db, 'usernames', data.username.toLowerCase());
+        
+        // Check if new is available
+        const checkNew = await getDoc(newRef);
+        if (checkNew.exists()) throw new Error("Username already taken");
+        
+        batch.delete(oldRef);
+        batch.set(newRef, { userId: uid });
+      } else if (!oldUsername) {
+        batch.set(doc(db, 'usernames', data.username.toLowerCase()), { userId: uid });
+      }
+      
+      batch.set(userRef, data, { merge: true });
+      await batch.commit();
+    } else {
+      await setDoc(userRef, data, { merge: true });
+    }
+    
     return true;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Failed to update profile", error);
-    toast.error("Ошибка при сохранении профиля");
+    toast.error(error.message || "Ошибка при сохранении профиля");
     return false;
   }
 };

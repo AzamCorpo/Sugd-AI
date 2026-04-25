@@ -41,36 +41,40 @@ import { Toaster, toast } from 'sonner';
 import { Joyride, Step } from 'react-joyride';
 import { cn } from './lib/utils';
 import { Logo } from './components/Logo';
+import { GlobalChat } from './components/GlobalChat';
 import { getGeminiResponse, extractMemoryUpdates } from './lib/gemini';
 import { translations } from './translations';
 import { fetchPrayerTimes, type PrayerTimings } from './services/prayerService';
+import { PrayerCard, NewsCard } from './components/Widgets';
+import { CodeBlock } from './components/ChatComponents';
+import { Sidebar } from './components/layout/Sidebar';
+import { ChatHeader } from './components/layout/ChatHeader';
 
 import { useAuth } from './lib/AuthContext';
 import { LoginScreen, SetupProfileScreen } from './components/AuthScreens';
 import { AdminDashboard } from './components/AdminDashboard';
-import { logout, loadUserChatsFromDB, saveUserChatsToDB, updateUserMemory, UserMemory } from './lib/firebase';
+import { ProfileEditor } from './components/ProfileEditor';
+import { logout, loadUserChatsFromDB, saveUserChatsToDB, updateUserMemory } from './lib/firebase';
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  image?: string;
-  timestamp: number;
-}
-
-interface ChatHistory {
-  id: string;
-  title: string;
-  messages: Message[];
-  updatedAt: number;
-}
+import { Message, ChatHistory, UserMemory } from './types';
 
 function MainApp() {
-  const { user, profile: authProfile } = useAuth();
+  const { user, profile: authProfile, refreshProfile, localGuest } = useAuth();
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
+  const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false);
+  const [showGlobalChat, setShowGlobalChat] = useState(false);
   const [input, setInput] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const autoResize = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 250)}px`;
+    }
+  };
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<ChatHistory[]>([]);
@@ -89,15 +93,28 @@ function MainApp() {
   const [isFetchingPrayer, setIsFetchingPrayer] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [activeSettingsTab, setActiveSettingsTab] = useState<'profile' | 'memory' | 'theme'>('profile');
+  
+  const _authProfile = authProfile || (localGuest ? {
+    username: 'guest_user',
+    email: 'guest@local.browser',
+    fullName: 'Guest User',
+    photoUrl: '',
+    bio: 'Local Guest',
+    links: '',
+    memory: {} as UserMemory,
+    isAdmin: false,
+    createdAt: new Date()
+  } as any : null);
+  
   const [profile, setProfile] = useState({ 
-    name: authProfile?.username || 'User', 
-    email: authProfile?.email || '', 
+    name: _authProfile?.username || 'User', 
+    email: _authProfile?.email || '', 
     apiKey: '',
-    fullName: authProfile?.fullName || '',
-    photoUrl: authProfile?.photoUrl || '',
-    bio: authProfile?.bio || '',
-    links: authProfile?.links || '',
-    memory: authProfile?.memory || {} as UserMemory
+    fullName: _authProfile?.fullName || '',
+    photoUrl: _authProfile?.photoUrl || '',
+    bio: _authProfile?.bio || '',
+    links: _authProfile?.links || '',
+    memory: _authProfile?.memory || {} as UserMemory
   });
   const [isEditingMemory, setIsEditingMemory] = useState(false);
   const [tempMemory, setTempMemory] = useState<UserMemory>(profile.memory);
@@ -179,7 +196,6 @@ function MainApp() {
   }, [profile]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const models = [
     { id: 'models/gemini-3-flash-preview', name: 'Sugd Flash' },
@@ -318,6 +334,19 @@ function MainApp() {
         setSelectedImage(reader.result as string);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleShareMessage = (content: string) => {
+    if (navigator.share) {
+      navigator.share({
+        title: 'Sugd AI Message',
+        text: content,
+        url: window.location.href
+      }).catch(console.error);
+    } else {
+      navigator.clipboard.writeText(content);
+      toast.success("Message copied to clipboard!");
     }
   };
 
@@ -604,209 +633,44 @@ function MainApp() {
         />
       </div>
 
-      {/* Sidebar Overlay */}
-      <AnimatePresence>
-        {isSidebarOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setIsSidebarOpen(false)}
-            className="fixed inset-0 bg-slate-900/50 dark:bg-black/50 z-20 md:hidden"
-          />
-        )}
-      </AnimatePresence>
-
       {/* Sidebar */}
-      <motion.aside
-        initial={false}
-        animate={{ width: isSidebarOpen ? 280 : 0, opacity: isSidebarOpen ? 1 : 0 }}
-        className={cn(
-          "fixed md:relative z-30 h-full glass-liquid border-r border-slate-200 dark:border-slate-800/50 flex flex-col overflow-hidden transition-all duration-300 ease-in-out",
-          !isSidebarOpen && "md:w-0"
-        )}
-      >
-        <div className="p-4 flex flex-col h-full w-[280px]">
-          <div className="flex items-center justify-between mb-6">
-            <Logo className="scale-90 origin-left" />
-            <button 
-              onClick={() => setIsSidebarOpen(false)}
-              className="md:hidden p-2 hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          <button
-            onClick={createNewChat}
-            className="flex items-center gap-2 w-full p-3 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-xl transition-all duration-200 mb-6 font-medium group"
-          >
-            <Plus size={20} className="group-hover:rotate-90 transition-transform duration-300" />
-            <span>{t.newChat}</span>
-          </button>
-
-          <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar" id="tour-chat-history">
-            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2 px-2">
-              {t.chatHistory}
-            </div>
-            {chats.length === 0 ? (
-              <div className="text-sm text-slate-600 px-2 italic">{t.noChats}</div>
-            ) : (
-              <AnimatePresence>
-                {chats.map((chat) => (
-                  <motion.div
-                    layout
-                    initial={{ opacity: 0, x: -10, scale: 0.95 }}
-                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    key={chat.id}
-                    onClick={() => {
-                      setCurrentChatId(chat.id);
-                      if (window.innerWidth < 768) setIsSidebarOpen(false);
-                    }}
-                    className={cn(
-                      "group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-300 border",
-                      currentChatId === chat.id 
-                        ? "bg-indigo-50 dark:bg-slate-800/50 border-indigo-100 dark:border-slate-700 text-indigo-900 dark:text-white shadow-sm dark:shadow-lg" 
-                        : "border-transparent hover:bg-slate-100 dark:hover:bg-slate-800/30 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-                    )}
-                  >
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <MessageSquare size={16} className={cn(currentChatId === chat.id ? "text-primary" : "text-slate-500")} />
-                      <span className="text-sm truncate font-medium">{chat.title}</span>
-                    </div>
-                    <button
-                      onClick={(e) => deleteChat(chat.id, e)}
-                      className="opacity-0 group-hover:opacity-100 p-1 hover:text-destructive hover:bg-red-50 dark:hover:hover:bg-red-500/10 rounded-md transition-all"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            )}
-          </div>
-
-          <div className="mt-auto pt-4 border-t border-black/5 dark:border-white/5" id="tour-settings">
-            <motion.button 
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setIsSettingsOpen(true)}
-              className="flex items-center gap-3 w-full p-3 hover:bg-slate-100 dark:hover:bg-white/5 rounded-2xl transition-all duration-300 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white text-sm font-medium group"
-            >
-              <Settings size={18} className="group-hover:rotate-90 transition-transform duration-500" />
-              <span>{t.settings}</span>
-            </motion.button>
-            {authProfile?.isAdmin && (
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setIsAdminDashboardOpen(true)}
-                className="flex items-center gap-3 w-full p-3 hover:bg-slate-100 dark:hover:bg-white/5 rounded-2xl transition-all duration-300 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:text-indigo-300 text-sm font-medium group mt-1"
-              >
-                <Users size={18} />
-                <span>Admin Panel</span>
-              </motion.button>
-            )}
-            <div className="flex items-center gap-3 p-3 mt-2 bg-black/[0.02] dark:bg-white/[0.02] rounded-2xl border border-black/5 dark:border-white/5 relative group cursor-pointer" onClick={logout} title="Click to logout">
-              <div className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-tr from-indigo-600 to-blue-400 flex items-center justify-center text-xs font-bold text-slate-900 dark:text-white shadow-lg shadow-indigo-500/20 uppercase shrink-0">
-                {profile.photoUrl ? (
-                  <img src={profile.photoUrl} alt="Avatar" className="w-full h-full object-cover" />
-                ) : (
-                  profile.name.substring(0,2)
-                )}
-              </div>
-              <div className="flex flex-col overflow-hidden">
-                <span className="text-xs font-bold truncate text-slate-900 dark:text-white">{profile.fullName || profile.name}</span>
-                <span className="text-[10px] text-slate-500 truncate">{profile.email}</span>
-              </div>
-              <div className="absolute inset-0 bg-red-500/10 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
-                <span className="text-xs font-bold text-red-400">Logout</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </motion.aside>
+      <Sidebar 
+        isSidebarOpen={isSidebarOpen}
+        setIsSidebarOpen={setIsSidebarOpen}
+        chats={chats}
+        currentChatId={currentChatId}
+        setCurrentChatId={setCurrentChatId}
+        createNewChat={createNewChat}
+        deleteChat={deleteChat}
+        setIsSettingsOpen={setIsSettingsOpen}
+        setIsAdminDashboardOpen={setIsAdminDashboardOpen}
+        setIsProfileEditorOpen={setIsProfileEditorOpen}
+        setShowGlobalChat={setShowGlobalChat}
+        isAdmin={!!authProfile?.isAdmin}
+        profile={profile}
+        t={t}
+      />
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col relative overflow-hidden z-10">
         {/* Header */}
-        <header className="h-16 border-b border-black/5 dark:border-white/5 flex items-center justify-between px-4 md:px-8 bg-white/80 dark:bg-black/20 backdrop-blur-2xl sticky top-0 z-20">
-          <div className="flex items-center gap-4">
-            {!isSidebarOpen && (
-              <button 
-                onClick={() => setIsSidebarOpen(true)}
-                className="p-2 hover:bg-black/5 dark:bg-white/5 rounded-xl transition-colors text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white"
-              >
-                <Menu size={20} />
-              </button>
-            )}
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2" id="tour-model-select">
-                <h1 className="text-sm font-semibold tracking-tight">Sugd AI</h1>
-                <div className="relative flex items-center gap-2">
-                  <button 
-                    onClick={() => setIsModelMenuOpen(!isModelMenuOpen)}
-                    className="flex items-center gap-1 px-2 py-0.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:bg-white/10 rounded-md border border-black/5 dark:border-white/5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105"
-                  >
-                    {models.find(m => m.id === selectedModel)?.name || 'Sugd Flash'} <ChevronDown size={10} className={cn("transition-transform duration-300", isModelMenuOpen && "rotate-180")} />
-                  </button>
-                  <AnimatePresence>
-                    {isModelMenuOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 5, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                        transition={{ duration: 0.2, ease: "easeOut" }}
-                        className="absolute top-full left-0 mt-2 w-48 bg-white dark:bg-[#0b0f1a]/90 backdrop-blur-3xl border border-black/10 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden"
-                      >
-                        {models.map((model) => (
-                          <button
-                            key={model.id}
-                            onClick={() => {
-                              setSelectedModel(model.id);
-                              setIsModelMenuOpen(false);
-                            }}
-                            className={cn("w-full px-4 py-3 text-left text-[11px] font-bold transition-all hover:bg-black/10 dark:bg-white/10 relative overflow-hidden", selectedModel === model.id ? "text-indigo-600 dark:text-indigo-400 bg-black/5 dark:bg-white/5" : "text-slate-900 dark:text-white")}
-                          >
-                            {selectedModel === model.id && <motion.div layoutId="activeModel" className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500" />}
-                            {model.name}
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </div>
-              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Azam Corp Enterprise</span>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => {
-                if (currentChatId) {
-                  const newChats = chats.map(c => c.id === currentChatId ? { ...c, messages: [] } : c);
-                  setChats(newChats);
-                  toast.success(t.chatCleared);
-                }
-              }}
-              className="p-2 hover:bg-black/5 dark:bg-white/5 rounded-xl transition-colors text-slate-500 hover:text-slate-900 dark:text-white"
-              title={t.clearChat}
-            >
-              <Trash2 size={18} />
-            </button>
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-black/5 dark:bg-white/5 rounded-full border border-black/5 dark:border-white/5">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-tighter">Secure</span>
-            </div>
-            <button className="p-2 hover:bg-black/5 dark:bg-white/5 rounded-xl transition-colors text-slate-500 hover:text-slate-900 dark:text-white">
-              <Share2 size={18} />
-            </button>
-          </div>
-        </header>
+        <ChatHeader 
+          isSidebarOpen={isSidebarOpen}
+          setIsSidebarOpen={setIsSidebarOpen}
+          selectedModel={selectedModel}
+          setSelectedModel={setSelectedModel}
+          isModelMenuOpen={isModelMenuOpen}
+          setIsModelMenuOpen={setIsModelMenuOpen}
+          models={models}
+          clearChat={() => {
+            if (currentChatId) {
+              const newChats = chats.map(c => c.id === currentChatId ? { ...c, messages: [] } : c);
+              setChats(newChats);
+              toast.success(t.chatCleared);
+            }
+          }}
+          t={t}
+        />
 
         {/* Chat Area */}
         <div className="flex-1 overflow-y-auto p-6 md:p-12 lg:p-16 custom-scrollbar scroll-smooth">
@@ -834,7 +698,7 @@ function MainApp() {
                     initial={{ y: 10, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.2 }}
-                    className="text-5xl md:text-7xl font-bold mb-8 tracking-tighter text-slate-900 dark:text-white dark:bg-clip-text dark:text-transparent dark:bg-gradient-to-br from-white to-white/40"
+                    className="text-5xl md:text-8xl font-black mb-8 tracking-tighter text-slate-900 dark:text-white dark:bg-clip-text dark:text-transparent dark:bg-gradient-to-br from-white via-white to-white/20 select-none"
                   >
                     {t.title}
                   </motion.h2>
@@ -842,29 +706,32 @@ function MainApp() {
                     initial={{ y: 10, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.3 }}
-                    className="text-slate-600 dark:text-slate-400 mb-16 max-w-lg text-lg leading-relaxed font-medium opacity-80"
+                    className="text-slate-600 dark:text-slate-400 mb-16 max-w-xl text-xl leading-relaxed font-medium opacity-70 italic"
                   >
                     {t.subtitle}
                   </motion.p>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-3xl px-4 md:px-0">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-4xl px-4 md:px-0">
                     {suggestions.map((s, i) => (
                       <motion.button
                         key={i}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.4 + (i * 0.1) }}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4 + (i * 0.1), ease: [0.16, 1, 0.3, 1] }}
                         onClick={() => setInput(s.prompt)}
                         className={cn(
-                          "p-4 border border-black/5 dark:border-white/5 hover:border-indigo-500/50 dark:border-indigo-500/30 rounded-2xl text-left transition-all duration-300 group relative overflow-hidden",
-                          i > 1 ? "hidden sm:block" : "bg-black/[0.02] dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.05]"
+                          "p-6 border border-black/5 dark:border-white/5 hover:border-indigo-500/50 dark:hover:border-indigo-500/30 rounded-[2rem] text-left transition-all duration-500 group relative overflow-hidden",
+                          i > 1 ? "hidden md:block" : "bg-white/[0.01] dark:bg-white/[0.01] hover:bg-slate-50 dark:hover:bg-white/[0.03] shadow-sm hover:shadow-2xl hover:-translate-y-1"
                         )}
                       >
-                        <div className="flex items-center justify-between mb-1 md:mb-2">
-                          <span className="text-[10px] sm:text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em]">{s.title}</span>
-                          <ChevronRight size={14} className="text-slate-600 group-hover:text-indigo-600 dark:text-indigo-400 sm:group-hover:translate-x-1 transition-all" />
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                             <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                             <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.3em]">{s.title}</span>
+                          </div>
+                          <ChevronRight size={16} className="text-slate-400 group-hover:text-indigo-600 dark:text-indigo-400 group-hover:translate-x-1 transition-all" />
                         </div>
-                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors leading-relaxed line-clamp-2 md:line-clamp-none">{s.prompt}</p>
+                        <p className="text-sm md:text-base text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-slate-200 transition-colors leading-relaxed font-medium">{s.prompt}</p>
                       </motion.button>
                     ))}
                   </div>
@@ -900,28 +767,13 @@ function MainApp() {
                         message.role === 'user' ? "items-end" : "items-start"
                       )}>
                         <div className={cn(
-                          "p-6 md:p-8 rounded-[2.5rem] relative group transition-all duration-700 glass-liquid",
+                          "p-6 md:p-8 rounded-[2.5rem] relative group transition-all duration-700",
                           message.role === 'user' 
-                            ? "border-indigo-500/20 shadow-indigo-500/5" 
-                            : "border-white/10 shadow-2xl"
+                            ? "bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-white/10 shadow-indigo-500/5" 
+                            : "bg-white dark:bg-[#0f1523]/80 border border-slate-200 dark:border-white/10 shadow-2xl"
                         )}>
                           <div className="absolute top-4 right-6 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center gap-2">
-                            <button 
-                              onClick={() => copyToClipboard(message.content, message.id)}
-                              className="p-2.5 hover:bg-white/10 rounded-2xl text-slate-400 hover:text-white transition-all backdrop-blur-md"
-                              title={t.copy}
-                            >
-                              {copiedId === message.id ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
-                            </button>
-                            {message.role === 'assistant' && (
-                              <button 
-                                className="p-2.5 hover:bg-white/10 rounded-2xl text-slate-400 hover:text-white transition-all backdrop-blur-md"
-                                title={t.share}
-                              >
-                                <Share2 size={16} />
-                              </button>
-                            )}
-                          </div>
+</div>
                           <div className="markdown-body leading-relaxed max-w-full overflow-hidden text-[16px]">
                             {message.image && (
                               <img src={message.image} alt="Attached image" className="max-w-full rounded-xl mb-4 max-h-80 object-cover shadow-sm border border-black/10 dark:border-white/10" />
@@ -931,65 +783,26 @@ function MainApp() {
                                 strong: ({node, ...props}) => <strong className="text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded-md transition-colors shadow-sm" {...props} />,
                                 code: ({ node, inline, className, children, ...props }: any) => {
                                   const match = /language-(\w+)/.exec(className || '');
-                                  if (!inline && match && match[1] === 'prayer-card') {
-                                    try {
-                                      const rawJson = String(children).trim();
-                                      const data = JSON.parse(rawJson);
-                                      const prayerIcons: Record<string, any> = {
-                                        'Fajr': <Sunrise size={14} className="text-amber-200" />,
-                                        'Sunrise': <Sun size={14} className="text-amber-300" />,
-                                        'Dhuhr': <Sun size={14} className="text-yellow-400" />,
-                                        'Asr': <Sun size={14} className="text-orange-400" />,
-                                        'Maghrib': <Sunset size={14} className="text-rose-300" />,
-                                        'Isha': <Moon size={14} className="text-indigo-200" />
-                                      };
-
-                                      return (
-                                        <div className="my-8 p-0 bg-[#0a2e2a] rounded-[2.5rem] text-white shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative overflow-hidden group/card max-w-sm border border-emerald-500/20">
-                                          {/* Decorative patterns */}
-                                          <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl -mr-16 -mt-16" />
-                                          <div className="absolute bottom-0 left-0 w-32 h-32 bg-teal-500/10 rounded-full blur-3xl -ml-16 -mb-16" />
-                                          
-                                          <div className="p-6 pb-4 border-b border-white/5 relative z-10 flex items-center justify-between">
-                                            <div>
-                                              <div className="flex items-center gap-2 mb-1">
-                                                <div className="w-6 h-6 bg-emerald-600 rounded-lg flex items-center justify-center">
-                                                  <Logo className="scale-50 brightness-0 invert" />
-                                                </div>
-                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Sugd AI</span>
-                                              </div>
-                                              <h3 className="text-2xl font-black tracking-tight text-white/90">{data.city}</h3>
-                                            </div>
-                                            <div className="text-right">
-                                              <div className="text-[9px] font-bold uppercase tracking-widest text-emerald-500/60 mb-1">Source</div>
-                                              <div className="px-3 py-1 bg-white/5 rounded-full border border-white/10 text-[10px] font-bold tracking-tighter">ALADHAN API</div>
-                                            </div>
-                                          </div>
-
-                                          <div className="p-3 grid grid-cols-2 gap-2 relative z-10">
-                                            {Object.entries(data.timings as PrayerTimings).filter(([k]) => ['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].includes(k)).map(([name, time]) => (
-                                              <div key={name} className="bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 p-4 rounded-3xl transition-all duration-300 group/tile">
-                                                <div className="flex items-center justify-between mb-2">
-                                                  <div className="text-[10px] font-bold uppercase tracking-widest text-white/40">{name}</div>
-                                                  <div className="opacity-50 group-hover/tile:opacity-100 transition-opacity">
-                                                    {prayerIcons[name] || <Clock size={14} />}
-                                                  </div>
-                                                </div>
-                                                <div className="text-xl font-black tracking-tight group-hover/tile:scale-105 transition-transform origin-left">{time}</div>
-                                              </div>
-                                            ))}
-                                          </div>
-
-                                          <div className="p-4 pt-0 text-center">
-                                            <div className="text-[9px] font-medium text-emerald-500/40 italic">
-                                              Times are based on local coordination. Verify with your local mosque.
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    } catch (e) {
-                                      return <code className={className} {...props}>{children}</code>;
+                                  if (!inline && match) {
+                                    if (match[1] === 'prayer-card') {
+                                      try {
+                                        const rawJson = String(children).trim();
+                                        const data = JSON.parse(rawJson);
+                                        return <PrayerCard data={data} />;
+                                      } catch (e) {
+                                        return <CodeBlock className={className} {...props}>{children}</CodeBlock>;
+                                      }
                                     }
+                                    if (match[1] === 'news-card') {
+                                      try {
+                                        const rawJson = String(children).trim();
+                                        const data = JSON.parse(rawJson);
+                                        return <NewsCard data={data} />;
+                                      } catch (e) {
+                                        return <CodeBlock className={className} {...props}>{children}</CodeBlock>;
+                                      }
+                                    }
+                                    return <CodeBlock className={className} {...props}>{children}</CodeBlock>;
                                   }
                                   return <code className={className} {...props}>{children}</code>;
                                 },
@@ -1013,6 +826,30 @@ function MainApp() {
                             >
                               {message.content}
                             </ReactMarkdown>
+                            
+                            {message.role === 'assistant' && (
+                              <div className="flex items-center gap-2 mt-4 pt-3 border-t border-black/5 dark:border-white/5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={() => handleShareMessage(message.content)}
+                                  className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-all text-slate-400 hover:text-indigo-500 flex items-center gap-1.5"
+                                  title="Share Content"
+                                >
+                                  <Share2 size={13} />
+                                  <span className="text-[9px] font-black uppercase tracking-[0.2em]">Share</span>
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(message.content);
+                                    toast.success("Copied!");
+                                  }}
+                                  className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-all text-slate-400 hover:text-indigo-500 flex items-center gap-1.5"
+                                  title="Copy Content"
+                                >
+                                  <Copy size={13} />
+                                  <span className="text-[9px] font-black uppercase tracking-[0.2em]">Copy</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                         <span className="text-[10px] text-slate-600 mt-2.5 font-bold uppercase tracking-tighter">
@@ -1270,51 +1107,58 @@ function MainApp() {
                   onClick={() => fileInputRef.current?.click()}
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
-                  className="p-3 md:p-4 rounded-full text-slate-500 hover:text-indigo-600 dark:text-indigo-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-all outline-none"
+                  className="p-3 md:p-4 rounded-2xl text-slate-500 hover:text-indigo-600 dark:text-indigo-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-all outline-none"
                   title="Upload Image/File"
                 >
-                  <Paperclip size={18} className="md:w-5 md:h-5" />
+                  <Paperclip size={20} />
                 </motion.button>
                 <textarea
                   ref={textareaRef}
-                value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  if (showHint) setShowHint(false);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder={t.typeMessage}
-                className="flex-1 bg-transparent border-none focus:ring-0 text-[14px] md:text-[15px] pt-4 pb-4 px-2 min-h-[50px] resize-none max-h-[150px] md:max-h-[200px] custom-scrollbar placeholder:text-slate-400 dark:placeholder:text-slate-600 text-slate-900 dark:text-slate-200 leading-relaxed font-medium"
-                rows={1}
-              />
-              <motion.button
-                whileHover={input.trim() && !isLoading ? { scale: 1.05 } : {}}
-                whileTap={input.trim() && !isLoading ? { scale: 0.95 } : {}}
-                onClick={() => handleSend()}
-                disabled={(!input.trim() && !selectedImage) || isLoading}
-                className={cn(
-                  "p-3 md:p-4 rounded-[1.5rem] md:rounded-[1.8rem] transition-all duration-500 flex items-center justify-center m-1 md:m-0",
-                  (input.trim() || selectedImage) && !isLoading
-                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/40"
-                    : "bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-600 cursor-not-allowed"
-                )}
-              >
-                {isLoading ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <Send size={18} className="md:w-[22px] md:h-[22px]" />
-                )}
-              </motion.button>
+                  value={input}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    if (showHint) setShowHint(false);
+                    autoResize();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder={t.typeMessage}
+                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm md:text-base pt-4 pb-4 px-2 min-h-[50px] resize-none max-h-[150px] md:max-h-[250px] custom-scrollbar placeholder:text-slate-400 dark:placeholder:text-slate-700 text-slate-900 dark:text-slate-100 leading-relaxed font-medium"
+                  rows={1}
+                />
+                <div className="flex items-center gap-2 mb-2 md:mb-3">
+                  <motion.button
+                    whileHover={input.trim() && !isLoading ? { scale: 1.05 } : {}}
+                    whileTap={input.trim() && !isLoading ? { scale: 0.95 } : {}}
+                    onClick={() => handleSend()}
+                    disabled={(!input.trim() && !selectedImage) || isLoading}
+                    className={cn(
+                      "w-12 h-12 md:w-14 md:h-14 rounded-2xl md:rounded-[1.8rem] transition-all duration-500 flex items-center justify-center m-1 md:m-0",
+                      (input.trim() || selectedImage) && !isLoading
+                        ? "bg-indigo-600 text-white shadow-xl shadow-indigo-600/40"
+                        : "bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-700 cursor-not-allowed"
+                    )}
+                  >
+                    {isLoading ? (
+                      <RefreshCw size={20} className="animate-spin text-white" />
+                    ) : (
+                      <Send size={20} className={cn("transition-transform duration-500", input.trim() && "translate-x-0.5 -translate-y-0.5")} />
+                    )}
+                  </motion.button>
+                </div>
               </div>
             </motion.div>
-            <p className="text-[9px] md:text-[10px] text-center text-slate-600 mt-3 md:mt-5 mb-2 md:mb-0 font-bold uppercase tracking-[0.25em] opacity-50 pb-safe">
-              by Azam Ashrapov
-            </p>
+            <div className="flex items-center justify-center gap-4 mt-8 md:mt-10 opacity-40 select-none pointer-events-none">
+               <div className="h-px w-16 bg-gradient-to-r from-transparent to-slate-400" />
+               <p className="text-[10px] text-center text-slate-500 font-extrabold uppercase tracking-[0.5em]">
+                  Azure Neural • Azam Corp
+               </p>
+               <div className="h-px w-16 bg-gradient-to-l from-transparent to-slate-400" />
+            </div>
           </div>
         </div>
       </main>
@@ -1645,12 +1489,28 @@ function MainApp() {
       {isAdminDashboardOpen && (
         <AdminDashboard onClose={() => setIsAdminDashboardOpen(false)} />
       )}
+
+      {isProfileEditorOpen && user && authProfile && (
+        <ProfileEditor 
+          uid={user.uid}
+          profile={authProfile}
+          onClose={() => setIsProfileEditorOpen(false)}
+          onUpdate={refreshProfile}
+          t={t}
+        />
+      )}
+
+      <AnimatePresence>
+        {showGlobalChat && (
+          <GlobalChat onClose={() => setShowGlobalChat(false)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
 export default function App() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, localGuest } = useAuth();
   const [init, setInit] = useState(true);
 
   useEffect(() => {
@@ -1665,11 +1525,11 @@ export default function App() {
     );
   }
 
-  if (!user) {
+  if (!user && !localGuest) {
     return <LoginScreen />;
   }
 
-  if (!profile) {
+  if (!profile && !localGuest) {
     return <SetupProfileScreen />;
   }
 

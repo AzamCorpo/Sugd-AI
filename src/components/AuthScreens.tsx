@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 
 export const LoginScreen = () => {
   const [loading, setLoading] = useState(false);
-  const { refreshProfile } = useAuth();
+  const { refreshProfile, setLocalGuest } = useAuth();
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -23,8 +23,14 @@ export const LoginScreen = () => {
 
   const handleGuestLogin = async () => {
     setLoading(true);
-    await loginAsGuest();
-    await refreshProfile();
+    const user = await loginAsGuest();
+    if (user) {
+      await refreshProfile();
+    } else {
+      // Fallback to local guest if Firebase fails
+      setLocalGuest(true);
+      toast.success("Joined as local guest mode / Вход в качестве локального гостя");
+    }
     setLoading(false);
   };
 
