@@ -50,8 +50,8 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isValidId(userId) && (isOwner(userId) || isAdmin());
-      allow list: if isAdmin();
+      allow read: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn();
       
       allow create: if isSignedIn() 
         && isValidId(userId)
@@ -74,11 +74,22 @@ service cloud.firestore {
       match /data/chats {
         allow read, write: if isOwner(userId) || isAdmin();
       }
+
+      match /friend_requests/{friendId} {
+        allow read: if isOwner(userId) || isOwner(friendId);
+        allow create: if isSignedIn() && isOwner(friendId);
+        allow update, delete: if isOwner(userId) || isOwner(friendId) || isAdmin();
+      }
+      
+      match /friends/{friendId} {
+        allow read: if isOwner(userId) || isOwner(friendId) || isAdmin();
+        allow create, update, delete: if isOwner(userId) || isAdmin();
+      }
     }
 
     match /usernames/{usernameId} {
       allow get: if isSignedIn();
-      allow list: if false;
+      allow list: if isSignedIn();
 
       allow create: if isSignedIn()
         && isValidId(usernameId)
@@ -91,6 +102,22 @@ service cloud.firestore {
       allow read: if true;
       allow create: if true;
       allow update, delete: if false;
+    }
+
+    match /direct_messages/{chatId} {
+      // Must be a participant to read
+      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
+      // Allow create if auth uid is in participants
+      allow create: if isSignedIn() && request.auth.uid in incoming().participants;
+      allow update: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/direct_messages/$(chatId)).data.participants;
+        allow create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/direct_messages/$(chatId)).data.participants 
+                      && incoming().senderId == request.auth.uid;
+        allow update, delete: if false;
+      }
     }
   }
 }

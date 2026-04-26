@@ -34,7 +34,8 @@ import {
   FileText,
   BookOpen,
   Newspaper,
-  Clock
+  Clock,
+  Camera
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Toaster, toast } from 'sonner';
@@ -42,6 +43,9 @@ import { Joyride, Step } from 'react-joyride';
 import { cn } from './lib/utils';
 import { Logo } from './components/Logo';
 import { GlobalChat } from './components/GlobalChat';
+import { UserProfileViewer } from './components/UserProfileViewer';
+import { DirectMessageChat } from './components/DirectMessageChat';
+import { FriendsMenu } from './components/FriendsMenu';
 import { getGeminiResponse, extractMemoryUpdates } from './lib/gemini';
 import { translations } from './translations';
 import { fetchPrayerTimes, type PrayerTimings } from './services/prayerService';
@@ -53,7 +57,6 @@ import { ChatHeader } from './components/layout/ChatHeader';
 import { useAuth } from './lib/AuthContext';
 import { LoginScreen, SetupProfileScreen } from './components/AuthScreens';
 import { AdminDashboard } from './components/AdminDashboard';
-import { ProfileEditor } from './components/ProfileEditor';
 import { logout, loadUserChatsFromDB, saveUserChatsToDB, updateUserMemory } from './lib/firebase';
 
 import { Message, ChatHistory, UserMemory } from './types';
@@ -61,11 +64,14 @@ import { Message, ChatHistory, UserMemory } from './types';
 function MainApp() {
   const { user, profile: authProfile, refreshProfile, localGuest } = useAuth();
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
-  const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false);
   const [showGlobalChat, setShowGlobalChat] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [activeDM, setActiveDM] = useState<{ chatId: string, profile: any } | null>(null);
+  const [showFriends, setShowFriends] = useState(false);
   const [input, setInput] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const profileFileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const autoResize = () => {
@@ -337,6 +343,47 @@ function MainApp() {
     }
   };
 
+  const handleProfileImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error("Profile image should be less than 2MB");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 250;
+          const MAX_HEIGHT = 250;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          setProfile(prev => ({ ...prev, photoUrl: dataUrl }));
+        };
+        img.src = reader.result as string;
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleShareMessage = (content: string) => {
     if (navigator.share) {
       navigator.share({
@@ -561,7 +608,7 @@ function MainApp() {
   const suggestions = t.suggestions;
 
   return (
-    <div className="flex h-screen bg-transparent text-slate-800 dark:text-slate-200 overflow-hidden font-sans relative" dir={isRTL ? "rtl" : "ltr"}>
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 overflow-hidden font-sans relative" dir={isRTL ? "rtl" : "ltr"}>
       <Toaster position="top-center" richColors />
       <Joyride
         steps={tourSteps}
@@ -589,50 +636,6 @@ function MainApp() {
         }}
       />
       
-      {/* Atmospheric Background */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 opacity-60">
-        <motion.div 
-          animate={{
-            scale: [1, 1.2, 1],
-            x: [0, 50, 0],
-            y: [0, -30, 0],
-          }}
-          transition={{
-            duration: 15,
-            repeat: Infinity,
-            ease: "linear"
-          }}
-          className="absolute -top-[20%] -left-[10%] w-[60vw] h-[60vw] max-w-[800px] max-h-[800px] bg-gradient-to-tr from-indigo-500/30 to-purple-500/20 blur-[120px] rounded-full dark:from-indigo-500/20 dark:to-purple-500/10" 
-        />
-        <motion.div 
-          animate={{
-            scale: [1, 1.5, 1],
-            x: [0, -60, 0],
-            y: [0, 40, 0],
-          }}
-          transition={{
-            duration: 20,
-            repeat: Infinity,
-            ease: "linear"
-          }}
-          className="absolute -bottom-[20%] -right-[10%] w-[70vw] h-[70vw] max-w-[900px] max-h-[900px] bg-gradient-to-bl from-blue-500/20 to-cyan-400/10 blur-[140px] rounded-full" 
-        />
-        <motion.div 
-          animate={{
-            scale: [1, 0.8, 1],
-            x: [0, 30, 0],
-            y: [0, 30, 0],
-          }}
-          transition={{
-            duration: 18,
-            repeat: Infinity,
-            ease: "linear",
-            delay: 2
-          }}
-          className="absolute top-[30%] left-[30%] w-[40vw] h-[40vw] max-w-[500px] max-h-[500px] bg-gradient-to-r from-pink-500/10 to-indigo-400/10 blur-[100px] rounded-full" 
-        />
-      </div>
-
       {/* Sidebar */}
       <Sidebar 
         isSidebarOpen={isSidebarOpen}
@@ -642,10 +645,9 @@ function MainApp() {
         setCurrentChatId={setCurrentChatId}
         createNewChat={createNewChat}
         deleteChat={deleteChat}
-        setIsSettingsOpen={setIsSettingsOpen}
         setIsAdminDashboardOpen={setIsAdminDashboardOpen}
-        setIsProfileEditorOpen={setIsProfileEditorOpen}
         setShowGlobalChat={setShowGlobalChat}
+        setShowFriends={setShowFriends}
         isAdmin={!!authProfile?.isAdmin}
         profile={profile}
         t={t}
@@ -669,6 +671,7 @@ function MainApp() {
               toast.success(t.chatCleared);
             }
           }}
+          setIsSettingsOpen={setIsSettingsOpen}
           t={t}
         />
 
@@ -905,7 +908,7 @@ function MainApp() {
         </div>
 
         {/* Input Area */}
-        <div className="p-4 md:p-10 bg-gradient-to-t from-slate-50 via-slate-50/80 dark:from-[#02040a] dark:via-[#02040a]/80 to-transparent">
+        <div className="p-4 md:p-10 bg-transparent">
           <div className="max-w-4xl mx-auto relative">
             <AnimatePresence>
               {isDocHelperOpen && (
@@ -1087,7 +1090,7 @@ function MainApp() {
             <motion.div 
               id="tour-chat-input"
               layout
-              className="relative flex flex-col gap-2 glass-liquid border border-black/10 dark:border-white/10 rounded-[2rem] p-2 md:p-3 shadow-2xl focus-within:border-indigo-500/40 focus-within:shadow-indigo-500/10 transition-all duration-500 group mx-2 md:mx-0"
+              className="relative flex flex-col gap-2 bg-white/50 dark:bg-slate-900/50 backdrop-blur-3xl border border-black/10 dark:border-white/10 rounded-[2rem] p-3 md:p-4 focus-within:border-indigo-500/40 focus-within:shadow-2xl focus-within:shadow-indigo-500/10 transition-all duration-500 group mx-2 md:mx-0"
             >
               <AnimatePresence>
                 {selectedImage && (
@@ -1223,24 +1226,73 @@ function MainApp() {
                 {activeSettingsTab === 'profile' && (
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">{t.name}</label>
-                        <input
-                          type="text"
-                          value={profile.name}
-                          onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                          className="w-full bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm focus:ring-2 ring-indigo-500/20 outline-none transition-all"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">{t.email}</label>
-                        <input
-                          type="email"
-                          disabled
-                          value={profile.email}
-                          className="w-full bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm opacity-50 cursor-not-allowed"
-                        />
-                      </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Username</label>
+                          <input
+                            type="text"
+                            value={profile.name}
+                            onChange={(e) => setProfile({ ...profile, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })}
+                            className="w-full bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm focus:ring-2 ring-indigo-500/20 outline-none transition-all"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Full Name</label>
+                          <input
+                            type="text"
+                            value={profile.fullName}
+                            onChange={(e) => setProfile({ ...profile, fullName: e.target.value })}
+                            className="w-full bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm focus:ring-2 ring-indigo-500/20 outline-none transition-all"
+                          />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <div className="flex items-center gap-4 border-b border-black/5 dark:border-white/5 pb-4">
+                            <div className="relative group cursor-pointer" onClick={() => profileFileInputRef.current?.click()}>
+                              {profile.photoUrl ? (
+                                <img src={profile.photoUrl} alt="Avatar" className="w-16 h-16 rounded-2xl object-cover shadow-lg border border-black/10 dark:border-white/10" />
+                              ) : (
+                                <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-500 border border-indigo-500/20">
+                                  <User size={24} />
+                                </div>
+                              )}
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all rounded-2xl flex items-center justify-center text-white">
+                                <Camera size={20} />
+                              </div>
+                              <input type="file" accept="image/*" ref={profileFileInputRef} className="hidden" onChange={handleProfileImageUpload} />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-bold dark:text-white">Profile Picture</h4>
+                              <p className="text-[10px] text-slate-500">JPG, PNG up to 2MB</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Links</label>
+                          <input
+                            type="text"
+                            value={profile.links}
+                            onChange={(e) => setProfile({ ...profile, links: e.target.value })}
+                            placeholder="https://your-link.com"
+                            className="w-full bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm focus:ring-2 ring-indigo-500/20 outline-none transition-all"
+                          />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Bio</label>
+                          <textarea
+                            value={profile.bio}
+                            onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
+                            placeholder="Tell us about yourself..."
+                            className="w-full bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm focus:ring-2 ring-indigo-500/20 outline-none transition-all min-h-[80px]"
+                          />
+                        </div>
+                        <div className="space-y-2 md:col-span-2 border-t border-black/5 dark:border-white/5 pt-4">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">{t.email}</label>
+                          <input
+                            type="email"
+                            disabled
+                            value={profile.email}
+                            className="w-full bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 text-sm opacity-50 cursor-not-allowed"
+                          />
+                        </div>
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">{t.apiKey} (Optional)</label>
@@ -1490,19 +1542,33 @@ function MainApp() {
         <AdminDashboard onClose={() => setIsAdminDashboardOpen(false)} />
       )}
 
-      {isProfileEditorOpen && user && authProfile && (
-        <ProfileEditor 
-          uid={user.uid}
-          profile={authProfile}
-          onClose={() => setIsProfileEditorOpen(false)}
-          onUpdate={refreshProfile}
-          t={t}
-        />
-      )}
-
       <AnimatePresence>
         {showGlobalChat && (
-          <GlobalChat onClose={() => setShowGlobalChat(false)} />
+          <GlobalChat onClose={() => setShowGlobalChat(false)} onSelectUser={setSelectedUserId} />
+        )}
+        
+        {showFriends && (
+          <FriendsMenu
+            onClose={() => setShowFriends(false)}
+            onOpenMessage={(chatId, profile) => setActiveDM({ chatId, profile })}
+            onOpenProfile={setSelectedUserId}
+          />
+        )}
+        
+        {selectedUserId && (
+          <UserProfileViewer 
+            userId={selectedUserId} 
+            onClose={() => setSelectedUserId(null)}
+            onOpenMessage={(chatId, profile) => setActiveDM({ chatId, profile })}
+          />
+        )}
+        
+        {activeDM && (
+          <DirectMessageChat
+            chatId={activeDM.chatId}
+            otherUser={activeDM.profile}
+            onClose={() => setActiveDM(null)}
+          />
         )}
       </AnimatePresence>
     </div>

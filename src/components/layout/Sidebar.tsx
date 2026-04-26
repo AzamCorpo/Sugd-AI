@@ -23,10 +23,9 @@ interface SidebarProps {
   setCurrentChatId: (id: string | null) => void;
   createNewChat: () => void;
   deleteChat: (id: string, e: React.MouseEvent) => void;
-  setIsSettingsOpen: (open: boolean) => void;
   setIsAdminDashboardOpen: (open: boolean) => void;
-  setIsProfileEditorOpen: (open: boolean) => void;
   setShowGlobalChat: (open: boolean) => void;
+  setShowFriends: (open: boolean) => void;
   isAdmin: boolean;
   profile: any;
   t: any;
@@ -40,10 +39,9 @@ export const Sidebar = ({
   setCurrentChatId,
   createNewChat,
   deleteChat,
-  setIsSettingsOpen,
   setIsAdminDashboardOpen,
-  setIsProfileEditorOpen,
   setShowGlobalChat,
+  setShowFriends,
   isAdmin,
   profile,
   t
@@ -68,7 +66,7 @@ export const Sidebar = ({
         initial={false}
         animate={{ width: isSidebarOpen ? 280 : 0, opacity: isSidebarOpen ? 1 : 0 }}
         className={cn(
-          "fixed md:relative z-30 h-full glass-liquid border-r border-slate-200 dark:border-slate-800/50 flex flex-col overflow-hidden transition-all duration-300 ease-in-out",
+          "fixed md:relative z-30 h-full bg-slate-50/50 dark:bg-[#0b0f1a]/50 text-slate-900 dark:text-white border-r border-slate-200 dark:border-slate-800/50 flex flex-col overflow-hidden transition-all duration-300 ease-in-out",
           !isSidebarOpen && "md:w-0"
         )}
       >
@@ -136,16 +134,6 @@ export const Sidebar = ({
             )}
           </div>
 
-          <div className="mt-4 p-4 rounded-3xl bg-indigo-600/5 border border-indigo-500/10 relative overflow-hidden group/wisdom">
-             <div className="absolute top-0 right-0 p-2">
-                <Brain size={12} className="text-indigo-500/20 group-hover/wisdom:scale-125 transition-transform" />
-             </div>
-             <p className="text-[9px] font-black uppercase tracking-[0.2em] text-indigo-500/60 mb-2">{t.wisdom}</p>
-             <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 leading-relaxed italic">
-               "{wisdom}"
-             </p>
-          </div>
-
           <div className="mt-4 pt-4 border-t border-black/5 dark:border-white/5" id="tour-settings">
             <motion.button 
               whileHover={{ scale: 1.02 }}
@@ -159,11 +147,11 @@ export const Sidebar = ({
             <motion.button 
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setIsSettingsOpen(true)}
+              onClick={() => setShowFriends(true)}
               className="flex items-center gap-3 w-full p-3 hover:bg-slate-100 dark:hover:bg-white/5 rounded-2xl transition-all duration-300 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white text-xs font-bold uppercase tracking-widest group mt-1"
             >
-              <Settings size={18} className="group-hover:rotate-90 transition-transform duration-500" />
-              <span>{t.settings}</span>
+              <User size={18} className="group-hover:scale-110 transition-transform duration-500" />
+              <span>Friends & DMs</span>
             </motion.button>
             {isAdmin && (
               <motion.button
@@ -176,15 +164,6 @@ export const Sidebar = ({
                 <span>Admin Panel</span>
               </motion.button>
             )}
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setIsProfileEditorOpen(true)}
-              className="flex items-center gap-3 w-full p-3 hover:bg-emerald-500/10 rounded-2xl transition-all duration-300 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:text-emerald-300 text-xs font-bold uppercase tracking-widest group mt-1"
-            >
-              <User size={18} />
-              <span>Edit Profile</span>
-            </motion.button>
             <div 
               className="flex items-center gap-3 p-3 mt-4 bg-black/[0.02] dark:bg-white/[0.02] rounded-3xl border border-black/5 dark:border-white/5 relative group cursor-pointer overflow-hidden transition-all hover:border-red-500/20" 
               onClick={logout}

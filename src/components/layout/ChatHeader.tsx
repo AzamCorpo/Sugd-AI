@@ -4,7 +4,8 @@ import {
   Menu, 
   ChevronDown, 
   Trash2, 
-  Share2 
+  Share2,
+  Settings
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -17,6 +18,7 @@ interface ChatHeaderProps {
   setIsModelMenuOpen: (open: boolean) => void;
   models: { id: string, name: string }[];
   clearChat: () => void;
+  setIsSettingsOpen: (open: boolean) => void;
   t: any;
 }
 
@@ -29,10 +31,11 @@ export const ChatHeader = ({
   setIsModelMenuOpen,
   models,
   clearChat,
+  setIsSettingsOpen,
   t
 }: ChatHeaderProps) => {
   return (
-    <header className="h-16 md:h-20 border-b border-black/5 dark:border-white/5 flex items-center justify-between px-4 md:px-10 bg-white/80 dark:bg-black/20 backdrop-blur-2xl sticky top-0 z-20">
+    <header className="h-16 md:h-20 border-b border-black/5 dark:border-white/5 flex items-center justify-between px-4 md:px-10 bg-white/80 dark:bg-slate-950/80 backdrop-blur-2xl sticky top-0 z-20">
       <div className="flex items-center gap-4">
         {!isSidebarOpen && (
           <button 
@@ -96,19 +99,16 @@ export const ChatHeader = ({
       </div>
       
       <div className="flex items-center gap-2 md:gap-4">
-        <button 
-          onClick={clearChat}
-          className="p-2.5 hover:bg-red-500/10 rounded-2xl transition-colors text-slate-400 hover:text-red-500 group"
-          title={t.clearChat}
-        >
-          <Trash2 size={20} className="group-hover:scale-110 transition-transform" />
-        </button>
         <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 rounded-full border border-emerald-500/10">
           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
           <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-widest">E2E Secure</span>
         </div>
-        <button className="p-2.5 hover:bg-indigo-500/10 rounded-2xl transition-colors text-slate-400 hover:text-indigo-500 group">
-          <Share2 size={20} className="group-hover:rotate-12 transition-transform" />
+        <button 
+          onClick={() => setIsSettingsOpen(true)}
+          className="p-2.5 hover:bg-black/5 dark:bg-white/5 rounded-2xl transition-colors text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white group"
+          title={t.settings}
+        >
+          <Settings size={20} className="group-hover:rotate-90 transition-transform duration-500" />
         </button>
       </div>
     </header>
